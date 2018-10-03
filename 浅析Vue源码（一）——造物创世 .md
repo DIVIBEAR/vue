@@ -1,0 +1,256 @@
+声明：英文注解为尤雨溪大神原著，中文为本人理解翻译。水平有限若理解有误请以原著为准，望指正，见谅哈~
+Vue 项目的起源，其实是源于对Vue进行实例化：
+
+```
+new Vue({
+  el: ...,
+  data: ...,
+  ....
+})
+```
+那么在这次实例化的过程中，究竟发生了哪些行为？让我们来一探究竟。打开Vue的源码文件，其核心代码在src/core目录下。下面我们从入口文件index.js开始进入：
+
+```
+// 这个应该是实例化的引入
+import Vue from './instance/index'
+//这个应该是初始化一些全局API
+import { initGlobalAPI } from './global-api/index'
+// 这个应该是从判断执行环境中的引入是否是ssr环境，是一个Boolea类型
+import { isServerRendering } from 'core/util/env'
+// 这个应该是virtualDom编译成renderContext的方法
+import { FunctionalRenderContext } from 'core/vdom/create-functional-component'
+//这里开始执行初始化全局变量
+initGlobalAPI(Vue)
+//为Vue原型定义属性$isServer
+Object.defineProperty(Vue.prototype, '$isServer', {
+  get: isServerRendering
+})
+// 为Vue原型定义属性$ssrContext
+Object.defineProperty(Vue.prototype, '$ssrContext', {
+  get () {
+    /* istanbul ignore next */
+    return this.$vnode && this.$vnode.ssrContext
+  }
+})
+// 为vue原型定义当为ssr环境运行时去加载FunctionalRenderContext方法
+// expose FunctionalRenderContext for ssr runtime helper installation
+Object.defineProperty(Vue, 'FunctionalRenderContext', {
+  value: FunctionalRenderContext
+})
+
+Vue.version = '__VERSION__'
+// 导出Vue
+export default Vue
+```
+接下来我们来看一下各个加载文件:
+
+```
+import Vue from './instance/index'
+```
+内容如下：
+```
+import { initMixin } from './init'
+import { stateMixin } from './state'
+import { renderMixin } from './render'
+import { eventsMixin } from './events'
+import { lifecycleMixin } from './lifecycle'
+import { warn } from '../util/index'
+
+function Vue (options) {
+  if (process.env.NODE_ENV !== 'production' &&
+    !(this instanceof Vue)
+  ) {
+    warn('Vue is a constructor and should be called with the `new` keyword')
+  }
+  this._init(options)
+}
+
+initMixin(Vue)
+stateMixin(Vue)
+eventsMixin(Vue)
+lifecycleMixin(Vue)
+renderMixin(Vue)
+
+export default Vue
+```
+这里简单粗暴的定义了一个 Vue Class，然后又调用了一系列init、mixin这样的方法来初始化一些功能，具体的我们后面在分析，不过通过代码我们可以确认的是：没错！这里确实是导出了一个 Vue 功能类。
+
+
+```
+import { initGlobalAPI } from './global-api/index'
+```
+initGlobalAPI这个东西，其实在[Vue官网](https://cn.vuejs.org/v2/api/#%E5%85%A8%E5%B1%80-API)上，就已经为我们说明了Vue的全局属性：
+
+![](https://user-gold-cdn.xitu.io/2018/10/1/1662f268b4948dac?w=292&h=307&f=png&s=15662)
+
+```
+import config from '../config'
+import { initUse } from './use'
+import { initMixin } from './mixin'
+import { initExtend } from './extend'
+import { initAssetRegisters } from './assets'
+import { set, del } from '../observer/index'
+import { ASSET_TYPES } from 'shared/constants'
+import builtInComponents from '../components/index'
+
+import {
+  warn,
+  extend,
+  nextTick,
+  mergeOptions,
+  defineReactive
+} from '../util/index'
+
+export function initGlobalAPI (Vue: GlobalAPI) {
+  // config
+  const configDef = {}
+  configDef.get = () => config
+  if (process.env.NODE_ENV !== 'production') {
+    configDef.set = () => {
+      warn(
+        'Do not replace the Vue.config object, set individual fields instead.'
+      )
+    }
+  }
+  Object.defineProperty(Vue, 'config', configDef)
+  // 这些工具方法不视作全局API的一部分，除非你已经意识到某些风险，否则不要去依赖他们
+  // exposed util methods.
+  // NOTE: these are not considered part of the public API - avoid relying on
+  // them unless you are aware of the risk.
+  Vue.util = {
+    warn,
+    extend,
+    mergeOptions,
+    defineReactive
+  }
+  // 这里定义全局属性
+  Vue.set = set
+  Vue.delete = del
+  Vue.nextTick = nextTick
+
+  Vue.options = Object.create(null)
+  ASSET_TYPES.forEach(type => {
+    Vue.options[type + 's'] = Object.create(null)
+  })
+
+  // this is used to identify the "base" constructor to extend all plain-object
+  // components with in Weex's multi-instance scenarios.
+  Vue.options._base = Vue
+
+  extend(Vue.options.components, builtInComponents)
+  // 定义全局方法
+  initUse(Vue)
+  initMixin(Vue)
+  initExtend(Vue)
+  initAssetRegisters(Vue)
+}
+```
+♦【Vue.config】 各种全局配置项
+
+♦【Vue.util】 各种工具函数，还有一些兼容性的标志位（哇，不用自己判断浏览器了，Vue已经判断好了）
+♦【Vue.set/delete】 这个你文档应该见过
+
+♦【Vue.nextTick】 这个是下一次更新前合并处理data变化做的一次优化
+
+♦【Vue.options】 这个options和我们上面用来构造实例的options不一样。这个是Vue默认提供的资源（组件指令过滤器）。
+
+♦【Vue.use】 通过initUse方法定义
+
+♦【Vue.mixin】 通过initMixin方法定义
+
+♦【Vue.extend】通过initExtend方法定义
+
+
+```
+import { isServerRendering } from 'core/util/env'
+```
+
+```
+// 这个需要用懒加载在vue渲染前
+// this needs to be lazy-evaled because vue may be required before
+// ssr使用的时候要把VUE_ENV（vue环境）设置成'server'
+// vue-server-renderer can set VUE_ENV
+let _isServer
+export const isServerRendering = () => {
+  if (_isServer === undefined) {
+    /* istanbul ignore if */
+    if (!inBrowser && !inWeex && typeof global !== 'undefined') {
+      // detect presence of vue-server-renderer and avoid
+      // Webpack shimming the process
+      _isServer = global['process'].env.VUE_ENV === 'server'
+    } else {
+      _isServer = false
+    }
+  }
+  return _isServer
+}
+```
+
+```
+import { FunctionalRenderContext } from 'core/vdom/create-functional-component'
+```
+
+```
+export function FunctionalRenderContext (
+  data: VNodeData,
+  props: Object,
+  children: ?Array<VNode>,
+  parent: Component,
+  Ctor: Class<Component>
+) {
+  const options = Ctor.options
+  // 确保createElement方法在components方法中
+  // ensure the createElement function in functional components
+  // 得到一个唯一的context上下文-主要是为了检查是否有重复命名确保唯一性
+  // gets a unique context - this is necessary for correct named slot check
+  let contextVm
+  if (hasOwn(parent, '_uid')) {
+  // 表示不存在创建
+    contextVm = Object.create(parent)
+    // $flow-disable-line
+    contextVm._original = parent
+  } else {
+    // the context vm passed in is a functional context as well.
+    // in this case we want to make sure we are able to get a hold to the
+    // real context instance.
+    contextVm = parent
+    // $flow-disable-line
+    parent = parent._original
+  }
+  const isCompiled = isTrue(options._compiled)
+  const needNormalization = !isCompiled
+
+  this.data = data
+  this.props = props
+  this.children = children
+  this.parent = parent
+  this.listeners = data.on || emptyObject
+  this.injections = resolveInject(options.inject, parent)
+  this.slots = () => resolveSlots(children, parent)
+  // 支持把template编译的方法
+  // support for compiled functional template
+  if (isCompiled) {
+    // exposing $options for renderStatic()
+    this.$options = options
+    // pre-resolve slots for renderSlot()
+    this.$slots = this.slots()
+    this.$scopedSlots = data.scopedSlots || emptyObject
+  }
+
+  if (options._scopeId) {
+    this._c = (a, b, c, d) => {
+      const vnode = createElement(contextVm, a, b, c, d, needNormalization)
+      if (vnode && !Array.isArray(vnode)) {
+        vnode.fnScopeId = options._scopeId
+        vnode.fnContext = parent
+      }
+      return vnode
+    }
+  } else {
+    this._c = (a, b, c, d) => createElement(contextVm, a, b, c, d, needNormalization)
+  }
+}
+
+installRenderHelpers(FunctionalRenderContext.prototype)
+```
+到这里，我们的入口文件差不多就了解清楚了，接下来，我们开始去了解一下 Vue class 的具体实现，其中我们会了解到Vue的相关生命周期的知识。
