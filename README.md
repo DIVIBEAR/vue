@@ -52,7 +52,7 @@ Vue实例中的data相当于Model层，而ViewModel层的核心是Vue中的双�
 
 总的看来，MVVM比MVC精简很多，不仅简化了业务与界面的依赖，还解决了数据频繁更新的问题，不用再用选择器操作DOM元素。因为在MVVM中，View不知道Model的存在，Model和ViewModel也观察不到View，这种低耦合模式提高代码的可重用性。
 
-## 3.Vue响应式布局原理是什么？
+## 3.Vue响应式原理是什么？
 Vue是基于 Object.defineProperty 来实现数据响应的，而 Object.defineProperty 是 ES5 中一个无法 shim 的特性，不支持IE8以下版本的浏览器。Vue通过Object.defineProperty的 getter/setter 方法对收集的依赖项进行监听,在属性被访问和修改时通知变化,进而更新视图数据；
 受现代JavaScript 的限制 (以及废弃 Object.observe)，Vue不能检测到对象属性的添加或删除。由于 Vue 会在初始化实例时对属性执行 getter/setter 转化过程，所以属性必须在 data 对象上存在才能让Vue转换它，这样才能让它是响应的。
 
